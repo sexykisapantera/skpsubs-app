@@ -191,7 +191,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       edit: 'Edit', del: 'Delete', keep: 'Keep', cancel: 'Cancel', save: 'Save changes',
       card: 'Card', cardPh: 'e.g. Mono •• 4821 (optional)', noCard: 'no card set',
       byCard: 'By card', byCardHint: 'monthly charge per card', noCardGroup: 'No card set', mo: '/mo', yr: '/yr',
-      errCard: 'Enter only the bank and the last 4 digits, never the full card number.'
+      errCard: 'Enter only the bank and the last 4 digits, never the full card number.',
+      remindNote: '🔔 The bot messages you at 10:00 (Kyiv time) the day before each charge.'
     },
     uk: {
       locale: 'uk-UA',
@@ -217,7 +218,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       edit: 'Змінити', del: 'Видалити', keep: 'Залишити', cancel: 'Скасувати', save: 'Зберегти',
       card: 'Картка', cardPh: 'напр. Mono •• 4821 (необов’язково)', noCard: 'картку не вказано',
       byCard: 'За картками', byCardHint: 'списання на місяць з кожної картки', noCardGroup: 'Без картки', mo: '/міс', yr: '/рік',
-      errCard: 'Вкажіть лише банк і останні 4 цифри, не повний номер картки.'
+      errCard: 'Вкажіть лише банк і останні 4 цифри, не повний номер картки.',
+      remindNote: '🔔 Бот напише о 10:00 (за Києвом) за день до кожного списання.'
     }
   };
   var tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData ? window.Telegram.WebApp : null;
@@ -231,7 +233,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   try { lang = localStorage.getItem(LANG_KEY) || ''; } catch (e) { lang = ''; }
   if (!STRINGS[lang]) lang = /^(uk|ru)/i.test(tgLang || navigator.language || '') ? 'uk' : 'en';
   function T(k) { return STRINGS[lang][k]; }
-  function setLang(l) { lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); }
+  function setLang(l) { lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); if (typeof scheduleServerSync === 'function') scheduleServerSync(); }
   document.documentElement.lang = lang;
 
   var state;
@@ -398,6 +400,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     list.forEach(function (x) { ul.appendChild(x.s.id === editingId ? editRow(x.s) : row(x)); });
     app.appendChild(ul);
 
+    if (tg) app.appendChild(h('p', { class: 'note', text: T('remindNote') }));
     if (state.examples) app.appendChild(h('p', { class: 'note', text: T('note') }));
 
     if (focusId) { var f = document.getElementById(focusId); if (f) f.focus(); }
@@ -497,6 +500,21 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   var cs = tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9') ? tg.CloudStorage : null;
   var CHUNK = 4000, saveTimer = null, savedChunks = 0;
 
+  // The reminder server keeps a copy of the list so the bot can message the day before a charge.
+  // Telegram's signed initData proves to the server which user is sending it.
+  var SYNC_URL = 'https://skpsubs-reminders.skpsubs.workers.dev';
+  var serverTimer = null;
+  function syncServer() {
+    if (!tg || !tg.initData || SYNC_URL.indexOf('https://') !== 0) return;
+    try {
+      fetch(SYNC_URL + '/sync', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData, lang: lang, rate: state.rate, subs: state.subs })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function scheduleServerSync() { clearTimeout(serverTimer); serverTimer = setTimeout(syncServer, 800); }
+
   function csGet(keys) { return new Promise(function (res, rej) { cs.getItems(keys, function (err, v) { err ? rej(err) : res(v || {}); }); }); }
   function csSet(k, v) { return new Promise(function (res, rej) { cs.setItem(k, v, function (err) { err ? rej(err) : res(); }); }); }
   function csDel(keys) { return new Promise(function (res) { if (!keys.length) return res(); cs.removeItems(keys, function () { res(); }); }); }
@@ -536,14 +554,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     state.examples = false; // once edited, the examples note has done its job
     saveLocal(); render();
     if (cs) { clearTimeout(saveTimer); saveTimer = setTimeout(saveCloud, 400); }
+    scheduleServerSync();
   }
 
   render();
   if (cs) {
     loadCloud().then(function (found) {
       if (!found) loadLocal(); // first launch on this account: examples, or this device's local copy
-      mode = 'shared'; render();
-    }, function () { loadLocal(); mode = 'local'; render(); });
+      mode = 'shared'; render(); scheduleServerSync();
+    }, function () { loadLocal(); mode = 'local'; render(); scheduleServerSync(); });
   } else {
     loadLocal(); mode = 'local'; render();
   }
