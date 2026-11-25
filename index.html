@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Subscription Ledger</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style id="page-style">
+/* Layout: a single HUD column on deep space. Totals console, add bar, then a renewal-ordered list. Dark only, by design. */
+:root {
+  color-scheme: dark;
+  --bg: #05070b;
+  --panel: rgba(18, 26, 38, 0.72);
+  --panel-solid: #0e1520;
+  --ink: #e8f1fa;
+  --muted: #7f91a6;
+  --line: rgba(130, 190, 255, 0.13);
+  --line-strong: rgba(130, 190, 255, 0.28);
+  --accent: #5ee6ff;
+  --accent-2: #a08bff;
+  --accent-ink: #04121a;
+  --soon: #ffb547;
+  --soon-bg: rgba(255, 181, 71, 0.07);
+  --danger: #ff6b7d;
+  /* SF Pro is Apple's system face: it can't be loaded from a font host, so the stack asks for the system font (SF Pro on Apple devices, Segoe UI / Roboto elsewhere). */
+  --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; -webkit-text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+body { -webkit-tap-highlight-color: transparent; }
+html { background: var(--bg); }
+body {
+  background:
+    radial-gradient(900px 480px at 8% -10%, rgba(94, 230, 255, 0.10), transparent 60%),
+    radial-gradient(800px 460px at 100% 0%, rgba(160, 139, 255, 0.10), transparent 60%),
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 48px,
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; min-height: 100vh;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding-top: calc(20px + var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)); padding-bottom: calc(48px + var(--tg-safe-area-inset-bottom, 0px) + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 24px; }
+
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.7rem, 4.4vw, 2.4rem); letter-spacing: -0.025em; margin: 6px 0 0; text-wrap: balance; }
+.side { display: grid; gap: 6px; justify-items: end; }
+.rate { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 4px 4px 4px 10px; }
+.rate input { width: 5.5em; text-align: right; padding: 5px 7px; }
+.side-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg.lang button { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.08em; padding: 7px 10px; }
+.save-state { font-size: 0.74rem; color: var(--muted); font-family: var(--font-mono); letter-spacing: 0.04em; }
+
+input { font: inherit; color: var(--ink); background: rgba(5, 9, 15, 0.7); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; min-width: 0; transition: border-color .15s, box-shadow .15s; }
+input::placeholder { color: #4d5d70; }
+input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94, 230, 255, 0.15); }
+input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8) sepia(1) hue-rotate(150deg); cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.total { position: relative; padding: 16px 18px 18px; display: grid; gap: 4px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px); }
+.total::before { content: ""; position: absolute; left: 16px; right: 16px; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .7; }
+.total.soon::before { background: linear-gradient(90deg, transparent, var(--soon), transparent); }
+.k { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+.total .v { font-family: var(--font-mono); font-size: clamp(1.25rem, 3.2vw, 1.65rem); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-shadow: 0 0 18px rgba(94, 230, 255, 0.25); }
+.total .v2 { font-family: var(--font-mono); font-size: 0.95rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+.total .s { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+.total.soon .v { color: var(--soon); text-shadow: 0 0 18px rgba(255, 181, 71, 0.25); }
+.total.soon .v2 { color: var(--soon); opacity: .8; }
+
+.add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto minmax(0, 1.3fr); gap: 10px; align-items: end; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field > span { font-family: var(--font-mono); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: rgba(5, 9, 15, 0.7); }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 8px 11px; font: inherit; font-size: 0.85rem; cursor: pointer; transition: color .15s, background .15s; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: rgba(94, 230, 255, 0.14); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(94, 230, 255, 0.4); }
+.seg.cur button { font-family: var(--font-mono); min-width: 2.4em; }
+.btn { font: inherit; font-weight: 600; border-radius: 7px; padding: 9px 16px; cursor: pointer; border: 1px solid transparent; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); white-space: nowrap; box-shadow: 0 0 20px rgba(94, 230, 255, 0.2); transition: box-shadow .15s, transform .15s; }
+.btn:hover { box-shadow: 0 0 28px rgba(94, 230, 255, 0.35); }
+.btn:disabled { opacity: .5; cursor: progress; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); font-weight: 500; box-shadow: none; }
+.btn.danger { background: var(--danger); color: #1a0509; box-shadow: 0 0 20px rgba(255, 107, 125, 0.25); }
+.err { color: var(--danger); font-size: 0.85rem; margin: -14px 0 0; }
+
+.ledger-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ledger-head h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; letter-spacing: -0.01em; margin: 0; }
+.ledger-head span { font-size: 0.78rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.ledger-head span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--soon); box-shadow: 0 0 8px var(--soon); }
+.ledger { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.row { position: relative; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto auto; gap: 16px; align-items: center; padding: 13px 16px; border-top: 1px solid var(--line); transition: background-color .2s; }
+.row:first-child { border-top: 0; }
+.row:hover { background: rgba(130, 190, 255, 0.035); }
+.row.soon { background: var(--soon-bg); }
+.row.soon::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: var(--soon); box-shadow: 0 0 10px var(--soon); }
+.cal { text-align: center; border: 1px solid var(--line); border-radius: 8px; line-height: 1.1; padding: 5px 0 6px; background: rgba(5, 9, 15, 0.6); }
+.cal .m { font-family: var(--font-mono); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+.cal .d { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; }
+.row.soon .cal { border-color: rgba(255, 181, 71, 0.45); }
+.row.soon .cal .m, .row.soon .cal .d { color: var(--soon); }
+.who { min-width: 0; }
+.who .n { font-weight: 600; font-size: 1rem; overflow-wrap: anywhere; }
+.who .meta { font-size: 0.8rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
+.chip { font-family: var(--font-mono); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.1em; border: 1px solid var(--line-strong); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+.card { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink); overflow-wrap: anywhere; }
+.card::before { content: ""; flex: none; width: 16px; height: 11px; border-radius: 2px; border: 1px solid var(--accent-2); background: linear-gradient(var(--accent-2), var(--accent-2)) 0 3px / 100% 2px no-repeat; opacity: .9; }
+.card.none { color: var(--muted); font-family: var(--font-body); font-style: italic; }
+.card.none::before { border-color: var(--muted); background: none; opacity: .5; }
+.by-card { display: grid; gap: 10px; }
+.ledger-head.plain span::before { display: none; }
+.card-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.card-tile { display: grid; gap: 4px; padding: 13px 15px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; position: relative; }
+.card-tile::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(135deg, rgba(160, 139, 255, 0.10), transparent 55%); }
+.card-tile.none::after { display: none; }
+.ct-v { font-family: var(--font-mono); font-size: 1.15rem; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 4px; overflow-wrap: anywhere; }
+.ct-s { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); }
+.ct-usd { font-family: var(--font-mono); color: var(--accent); }
+.ct-y { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); }
+.add .f-card { grid-column: 1 / 5; }
+.edit-grid .f-card { grid-column: 1 / -1; }
+.due { font-weight: 600; color: var(--ink); }
+.row.soon .due { color: var(--soon); }
+.price { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.price .p { font-size: 1.02rem; font-weight: 500; }
+.price .eq { font-size: 0.78rem; color: var(--accent); opacity: .85; }
+.acts { display: flex; gap: 4px; }
+.icon { border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 7px; padding: 6px 9px; cursor: pointer; font: inherit; font-size: 0.8rem; transition: color .15s, border-color .15s; }
+.icon:hover { border-color: var(--line-strong); color: var(--ink); }
+.icon.del:hover { color: var(--danger); border-color: rgba(255, 107, 125, 0.4); }
+.row.editing { grid-template-columns: 1fr; background: rgba(94, 230, 255, 0.04); }
+.row.editing::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.edit-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto minmax(0, 1.3fr); gap: 10px; align-items: end; }
+.edit-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+.empty { padding: 32px 18px; text-align: center; color: var(--muted); }
+.note { font-size: 0.8rem; color: var(--muted); margin: 0; }
+
+@media (max-width: 760px) {
+  .add, .edit-grid { grid-template-columns: 1fr 1fr; }
+  .add .f-name, .edit-grid .f-name, .add .btn, .add .f-card { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .totals { grid-template-columns: 1fr 1fr; }
+  .total.soon { grid-column: 1 / -1; }
+  .side { justify-items: start; }
+  .row { grid-template-columns: 46px minmax(0, 1fr) auto; gap: 12px; }
+  .acts { grid-column: 2 / -1; justify-content: flex-end; margin-top: -6px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+<script type="application/json" id="ledger-state">{"rate":42,"examples":true,"subs":[{"id":"s1","name":"Netflix","price":9.99,"currency":"USD","cycle":"monthly","next":"2026-12-02","card":"Mono •• 4821"},{"id":"s2","name":"Spotify Premium","price":5.49,"currency":"USD","cycle":"monthly","next":"2026-11-28","card":"Mono •• 4821"},{"id":"s3","name":"Kyivstar mobile plan","price":250,"currency":"UAH","cycle":"monthly","next":"2026-11-30","card":"Privat •• 1093"},{"id":"s4","name":"MEGOGO","price":199,"currency":"UAH","cycle":"monthly","next":"2026-12-10","card":"Privat •• 1093"},{"id":"s5","name":"iCloud+ 200 GB","price":2.99,"currency":"USD","cycle":"monthly","next":"2026-12-14","card":"Mono •• 4821"},{"id":"s6","name":"Domain renewal","price":12,"currency":"USD","cycle":"yearly","next":"2027-01-19"}]}</script>
+<script id="page-script">
+(function () {
+  var LS_KEY = 'subscription-ledger-local';
+  var LANG_KEY = 'subscription-ledger-lang';
+
+  // ---------- language: English and Ukrainian ----------
+  function ukPlural(n, one, few, many) {
+    var m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+  var STRINGS = {
+    en: {
+      locale: 'en-GB',
+      months: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+      eyebrow: 'Subscriptions', title: 'Subscription Ledger',
+      saving: 'Syncing…', savedPage: 'Synced with your Telegram', savedLocal: 'Saved in this browser only',
+      rateAria: 'Hryvnias per dollar', langAria: 'Language',
+      perMonth: 'Per month', perYear: 'Per year', next7: 'Next 7 days',
+      subsCount: function (n) { return n + ' subscription' + (n === 1 ? '' : 's'); },
+      yearlyOnce: 'yearly plans counted once',
+      renewalsSoon: function (n) { return n + ' renewal' + (n === 1 ? '' : 's') + ' coming up'; },
+      nothingSoon: 'nothing renews this week',
+      addAria: 'Add a subscription',
+      errName: 'Give the subscription a name.', errPrice: 'Enter the price as a number, like 199 or 9.99.', errDate: 'Pick the next renewal date.',
+      upcoming: 'Upcoming renewals', within7: 'Renews within 7 days',
+      empty: 'No subscriptions yet. Add your first one above.',
+      note: 'The starting rows are examples. Edit them to match your plans or delete them. Set your own exchange rate at the top right.',
+      name: 'Name', price: 'Price', currency: 'Currency', billing: 'Billing', nextRenewal: 'Next renewal',
+      namePh: 'e.g. YouTube Premium', monthly: 'Monthly', yearly: 'Yearly', add: 'Add',
+      noDate: 'No date', today: 'Renews today', tomorrow: 'Renews tomorrow',
+      inDays: function (n) { return 'In ' + n + ' days'; },
+      chipMonthly: 'monthly', chipYearly: 'yearly',
+      edit: 'Edit', del: 'Delete', keep: 'Keep', cancel: 'Cancel', save: 'Save changes',
+      card: 'Card', cardPh: 'e.g. Mono •• 4821 (optional)', noCard: 'no card set',
+      byCard: 'By card', byCardHint: 'monthly charge per card', noCardGroup: 'No card set', mo: '/mo', yr: '/yr',
+      errCard: 'Enter only the bank and the last 4 digits, never the full card number.'
+    },
+    uk: {
+      locale: 'uk-UA',
+      months: ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'],
+      eyebrow: 'Підписки', title: 'Облік підписок',
+      saving: 'Синхронізую…', savedPage: 'Синхронізовано з Telegram', savedLocal: 'Збережено лише в цьому браузері',
+      rateAria: 'Гривень за долар', langAria: 'Мова',
+      perMonth: 'На місяць', perYear: 'На рік', next7: 'Найближчі 7 днів',
+      subsCount: function (n) { return n + ' ' + ukPlural(n, 'підписка', 'підписки', 'підписок'); },
+      yearlyOnce: 'річні плани враховано один раз',
+      renewalsSoon: function (n) { return n + ' ' + ukPlural(n, 'продовження', 'продовження', 'продовжень') + ' попереду'; },
+      nothingSoon: 'цього тижня нічого не продовжується',
+      addAria: 'Додати підписку',
+      errName: 'Вкажіть назву підписки.', errPrice: 'Вкажіть ціну числом, наприклад 199 або 9.99.', errDate: 'Оберіть дату наступного продовження.',
+      upcoming: 'Найближчі продовження', within7: 'Продовжується протягом 7 днів',
+      empty: 'Підписок ще немає. Додайте першу вище.',
+      note: 'Початкові рядки — приклади. Змініть їх під свої плани або видаліть. Свій курс вкажіть угорі праворуч.',
+      name: 'Назва', price: 'Ціна', currency: 'Валюта', billing: 'Оплата', nextRenewal: 'Наступне продовження',
+      namePh: 'напр. YouTube Premium', monthly: 'Щомісяця', yearly: 'Щороку', add: 'Додати',
+      noDate: 'Без дати', today: 'Продовжується сьогодні', tomorrow: 'Продовжується завтра',
+      inDays: function (n) { return 'Через ' + n + ' ' + ukPlural(n, 'день', 'дні', 'днів'); },
+      chipMonthly: 'щомісяця', chipYearly: 'щороку',
+      edit: 'Змінити', del: 'Видалити', keep: 'Залишити', cancel: 'Скасувати', save: 'Зберегти',
+      card: 'Картка', cardPh: 'напр. Mono •• 4821 (необов’язково)', noCard: 'картку не вказано',
+      byCard: 'За картками', byCardHint: 'списання на місяць з кожної картки', noCardGroup: 'Без картки', mo: '/міс', yr: '/рік',
+      errCard: 'Вкажіть лише банк і останні 4 цифри, не повний номер картки.'
+    }
+  };
+  var tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData ? window.Telegram.WebApp : null;
+  if (tg) {
+    tg.ready(); tg.expand();
+    try { tg.setHeaderColor('#05070b'); tg.setBackgroundColor('#05070b'); if (tg.setBottomBarColor) tg.setBottomBarColor('#05070b'); } catch (e) {}
+  }
+  function haptic(kind) { try { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(kind); } catch (e) {} }
+  var tgLang = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.language_code || '' : '';
+  var lang = 'en';
+  try { lang = localStorage.getItem(LANG_KEY) || ''; } catch (e) { lang = ''; }
+  if (!STRINGS[lang]) lang = /^(uk|ru)/i.test(tgLang || navigator.language || '') ? 'uk' : 'en';
+  function T(k) { return STRINGS[lang][k]; }
+  function setLang(l) { lang = l; try { localStorage.setItem(LANG_KEY, l); } catch (e) {} document.documentElement.lang = l; render(); }
+  document.documentElement.lang = lang;
+
+  var state;
+  try { state = JSON.parse(document.getElementById('ledger-state').textContent); } catch (e) { state = {}; }
+  normalize();
+
+  function normalize() {
+    if (!state || typeof state !== 'object') state = {};
+    if (!Array.isArray(state.subs)) state.subs = [];
+    if (!(state.rate > 0)) state.rate = 42;
+    var legacy = state.currency === 'UAH' ? 'UAH' : 'USD';
+    state.subs.forEach(function (s) { if (s.currency !== 'UAH' && s.currency !== 'USD') s.currency = legacy; });
+    delete state.currency;
+  }
+
+  var mode = 'pending'; // 'shared' (page saves itself), 'local' (browser only)
+  var saving = false;
+  var editingId = null, confirmId = null, editDraft = null;
+  var draft = { name: '', price: '', currency: 'UAH', cycle: 'monthly', next: '', card: '' };
+  var formError = '';
+
+  // ---------- dates ----------
+  function today() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function parseDate(s) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+  function addMonths(base, n, day) {
+    var y = base.getFullYear(), m = base.getMonth() + n;
+    var last = new Date(y, m + 1, 0).getDate();
+    return new Date(y, m, Math.min(day, last));
+  }
+  // A stored date may be in the past; roll it forward one cycle at a time so the list always shows the upcoming charge.
+  function nextRenewal(sub) {
+    var d = parseDate(sub.next); if (!d) return null;
+    var t = today(), day = d.getDate(), step = sub.cycle === 'yearly' ? 12 : 1, n = 0, cur = d;
+    while (cur < t && n < 1200) { n += step; cur = addMonths(d, n, day); }
+    return cur;
+  }
+  function daysUntil(d) { return Math.round((d - today()) / 86400000); }
+
+  // ---------- money: every price is shown in hryvnias and dollars ----------
+  var fmtUAH = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var fmtUSD = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function uah(v) { return fmtUAH.format(v) + ' ₴'; }
+  function usd(v) { return '$' + fmtUSD.format(v); }
+  function fmt(v, cur) { return cur === 'USD' ? usd(v) : uah(v); }
+  function toUAH(v, cur) { return cur === 'USD' ? v * state.rate : v; }
+  function both(vUAH) { return { uah: uah(vUAH), usd: usd(vUAH / state.rate) }; }
+  function monthlyUAH(s) { var v = toUAH(s.price, s.currency); return s.cycle === 'yearly' ? v / 12 : v; }
+  function yearlyUAH(s) { var v = toUAH(s.price, s.currency); return s.cycle === 'yearly' ? v : v * 12; }
+
+  // ---------- tiny DOM helper (all user text goes through textContent) ----------
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      var v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    (kids || []).forEach(function (c) { if (c != null) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return el;
+  }
+
+  // ---------- rendering ----------
+  function sorted() {
+    return state.subs.map(function (s) { return { s: s, d: nextRenewal(s) }; })
+      .sort(function (a, b) {
+        var ad = a.d ? a.d.getTime() : Infinity, bd = b.d ? b.d.getTime() : Infinity;
+        return ad - bd || a.s.name.localeCompare(b.s.name);
+      });
+  }
+
+  function totalCard(cls, label, vUAH, sub) {
+    var b = both(vUAH);
+    return h('div', { class: 'total' + (cls ? ' ' + cls : '') }, [
+      h('span', { class: 'k', text: label }),
+      h('span', { class: 'v', text: b.uah }),
+      h('span', { class: 'v2', text: b.usd }),
+      h('span', { class: 's', text: sub })
+    ]);
+  }
+
+  function render() {
+    var app = document.getElementById('app');
+    var focusId = document.activeElement && document.activeElement.id;
+    app.textContent = '';
+
+    var list = sorted();
+    var perMonth = state.subs.reduce(function (a, s) { return a + monthlyUAH(s); }, 0);
+    var perYear = state.subs.reduce(function (a, s) { return a + yearlyUAH(s); }, 0);
+    var soon = list.filter(function (x) { return x.d && daysUntil(x.d) <= 7; });
+    var soonSum = soon.reduce(function (a, x) { return a + toUAH(x.s.price, x.s.currency); }, 0);
+    var t = today();
+
+    var saveText = saving ? T('saving') : mode === 'shared' ? T('savedPage') : mode === 'local' ? T('savedLocal') : '';
+    var langSeg = h('div', { class: 'seg lang', role: 'group', 'aria-label': T('langAria') }, [['en', 'EN'], ['uk', 'УКР']].map(function (o) {
+      return h('button', { type: 'button', id: 'lang-' + o[0], 'aria-pressed': String(lang === o[0]), text: o[1], onclick: function () { setLang(o[0]); } });
+    }));
+    var rateInput = h('input', { id: 'rate', inputmode: 'decimal', value: String(state.rate), 'aria-label': T('rateAria'), onchange: function (e) {
+      var r = parseFloat(String(e.target.value).replace(',', '.'));
+      if (isFinite(r) && r > 0) { state.rate = Math.round(r * 100) / 100; commit(); } else { e.target.value = String(state.rate); }
+    } });
+
+    app.appendChild(h('header', { class: 'top' }, [
+      h('div', null, [
+        h('div', { class: 'eyebrow', text: T('eyebrow') + ' · ' + t.toLocaleDateString('uk-UA') }),
+        h('h1', { text: T('title') })
+      ]),
+      h('div', { class: 'side' }, [
+        h('div', { class: 'side-row' }, [langSeg, h('label', { class: 'rate' }, ['1 $ =', rateInput, '₴'])]),
+        h('span', { class: 'save-state', role: 'status', text: saveText })
+      ])
+    ]));
+
+    app.appendChild(h('section', { class: 'totals', 'aria-label': 'Totals' }, [
+      totalCard('', T('perMonth'), perMonth, T('subsCount')(state.subs.length)),
+      totalCard('', T('perYear'), perYear, T('yearlyOnce')),
+      totalCard('soon', T('next7'), soonSum, soon.length ? T('renewalsSoon')(soon.length) : T('nothingSoon'))
+    ]));
+
+    // Per-card totals: shown once at least one subscription names a card.
+    var groups = {}, order = [];
+    state.subs.forEach(function (s) {
+      var key = s.card || '';
+      if (!groups[key]) { groups[key] = { m: 0, n: 0 }; order.push(key); }
+      groups[key].m += monthlyUAH(s); groups[key].n += 1;
+    });
+    if (order.some(function (k) { return k !== ''; })) {
+      order.sort(function (a, b) { return (a === '') - (b === '') || groups[b].m - groups[a].m; });
+      app.appendChild(h('section', { class: 'by-card', 'aria-label': T('byCard') }, [
+        h('div', { class: 'ledger-head plain' }, [h('h2', { text: T('byCard') }), h('span', { text: T('byCardHint') })]),
+        h('div', { class: 'card-tiles' }, order.map(function (k) {
+          var g = groups[k], b = both(g.m);
+          return h('div', { class: 'card-tile' + (k ? '' : ' none') }, [
+            h('div', { class: 'card' + (k ? '' : ' none'), text: k || T('noCardGroup') }),
+            h('div', { class: 'ct-v', text: b.uah + T('mo') }),
+            h('div', { class: 'ct-s' }, [h('span', { class: 'ct-usd', text: b.usd + T('mo') }), h('span', { text: T('subsCount')(g.n) })]),
+            h('div', { class: 'ct-y', text: uah(g.m * 12) + T('yr') })
+          ]);
+        }))
+      ]));
+    }
+
+    var form = h('form', { class: 'add', 'aria-label': T('addAria'), onsubmit: function (e) {
+      e.preventDefault();
+      var v = validate(draft);
+      if (typeof v === 'string') { formError = v; haptic('error'); render(); return; }
+      v.id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      state.subs.push(v); haptic('success');
+      draft = { name: '', price: '', currency: draft.currency, cycle: draft.cycle, next: '', card: draft.card }; formError = '';
+      commit();
+    } }, fieldSet(draft, 'add', true));
+    app.appendChild(form);
+    // Cards already used, offered as suggestions so the same card is spelled the same way each time.
+    var cards = [];
+    state.subs.forEach(function (s) { if (s.card && cards.indexOf(s.card) < 0) cards.push(s.card); });
+    app.appendChild(h('datalist', { id: 'card-options' }, cards.map(function (c) { return h('option', { value: c }); })));
+    if (formError) app.appendChild(h('p', { class: 'err', role: 'alert', text: T(formError) }));
+
+    app.appendChild(h('div', { class: 'ledger-head' }, [h('h2', { text: T('upcoming') }), h('span', { text: T('within7') })]));
+    var ul = h('ul', { class: 'ledger' });
+    if (!list.length) ul.appendChild(h('li', { class: 'empty', text: T('empty') }));
+    list.forEach(function (x) { ul.appendChild(x.s.id === editingId ? editRow(x.s) : row(x)); });
+    app.appendChild(ul);
+
+    if (state.examples) app.appendChild(h('p', { class: 'note', text: T('note') }));
+
+    if (focusId) { var f = document.getElementById(focusId); if (f) f.focus(); }
+  }
+
+  function seg(d, key, options, prefix, label, extraClass) {
+    return h('div', { class: 'seg' + (extraClass ? ' ' + extraClass : ''), role: 'group', 'aria-label': label }, options.map(function (o) {
+      return h('button', { type: 'button', id: prefix + '-' + key + '-' + o[0], 'aria-pressed': String(d[key] === o[0]), text: o[1], onclick: function () { d[key] = o[0]; render(); } });
+    }));
+  }
+
+  function fieldSet(d, prefix, withSubmit) {
+    var kids = [
+      h('label', { class: 'field f-name' }, [h('span', { text: T('name') }), h('input', { id: prefix + '-name', value: d.name, placeholder: T('namePh'), autocomplete: 'off', oninput: function (e) { d.name = e.target.value; } })]),
+      h('label', { class: 'field' }, [h('span', { text: T('price') }), h('input', { id: prefix + '-price', value: d.price, inputmode: 'decimal', placeholder: d.currency === 'USD' ? '9.99' : '199', oninput: function (e) { d.price = e.target.value; } })]),
+      h('div', { class: 'field' }, [h('span', { text: T('currency') }), seg(d, 'currency', [['UAH', '₴'], ['USD', '$']], prefix, T('currency'), 'cur')]),
+      h('div', { class: 'field' }, [h('span', { text: T('billing') }), seg(d, 'cycle', [['monthly', T('monthly')], ['yearly', T('yearly')]], prefix, T('billing'))]),
+      h('label', { class: 'field' }, [h('span', { text: T('nextRenewal') }), h('input', { id: prefix + '-next', type: 'date', lang: lang, value: d.next, oninput: function (e) { d.next = e.target.value; } })]),
+      h('label', { class: 'field f-card' }, [h('span', { text: T('card') }), h('input', { id: prefix + '-card', value: d.card || '', list: 'card-options', maxlength: '40', placeholder: T('cardPh'), autocomplete: 'off', oninput: function (e) { d.card = e.target.value; } })])
+    ];
+    if (withSubmit) kids.push(h('button', { class: 'btn', type: 'submit', id: 'add-submit', disabled: saving, text: T('add') }));
+    return kids;
+  }
+
+  // Returns the cleaned subscription, or a dictionary key naming the problem.
+  function validate(d) {
+    var name = String(d.name || '').trim();
+    var price = parseFloat(String(d.price).replace(/\s/g, '').replace(',', '.'));
+    if (!name) return 'errName';
+    if (!isFinite(price) || price < 0) return 'errPrice';
+    if (!parseDate(d.next)) return 'errDate';
+    var card = String(d.card || '').trim().slice(0, 40);
+    // The page stores its data inside itself, so a full card number must never land here: allow a label and the last 4 digits only.
+    if (/\d{5,}/.test(card.replace(/[\s\-–—._]/g, ''))) return 'errCard';
+    return { name: name.slice(0, 80), price: Math.round(price * 100) / 100, currency: d.currency === 'USD' ? 'USD' : 'UAH', cycle: d.cycle === 'yearly' ? 'yearly' : 'monthly', next: d.next, card: card };
+  }
+
+  function row(x) {
+    var s = x.s, d = x.d, n = d ? daysUntil(d) : null, isSoon = n != null && n <= 7;
+    var dueText = n == null ? T('noDate') : n === 0 ? T('today') : n === 1 ? T('tomorrow') : T('inDays')(n);
+    var other = s.currency === 'USD' ? uah(s.price * state.rate) : usd(s.price / state.rate);
+    var li = h('li', { class: 'row' + (isSoon ? ' soon' : '') });
+    li.appendChild(h('div', { class: 'cal', 'aria-hidden': 'true' }, d ? [h('div', { class: 'm', text: T('months')[d.getMonth()] }), h('div', { class: 'd', text: String(d.getDate()) })] : [h('div', { class: 'd', text: '–' })]));
+    li.appendChild(h('div', { class: 'who' }, [
+      h('div', { class: 'n', text: s.name }),
+      h('div', { class: 'meta' }, [
+        h('span', { class: 'due', text: dueText }),
+        d ? h('span', { text: d.toLocaleDateString(T('locale'), { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() !== today().getFullYear() ? 'numeric' : undefined }) }) : null,
+        h('span', { class: 'chip', text: s.cycle === 'yearly' ? T('chipYearly') : T('chipMonthly') }),
+        h('span', { class: 'card' + (s.card ? '' : ' none'), title: T('card'), text: s.card || T('noCard') })
+      ])
+    ]));
+    li.appendChild(h('div', { class: 'price' }, [
+      h('div', { class: 'p', text: fmt(s.price, s.currency) }),
+      h('div', { class: 'eq', text: '≈ ' + other })
+    ]));
+    if (confirmId === s.id) {
+      li.appendChild(h('div', { class: 'acts' }, [
+        h('button', { class: 'btn danger', id: 'confirm-del-' + s.id, disabled: saving, text: T('del'), onclick: function () { state.subs = state.subs.filter(function (z) { return z.id !== s.id; }); confirmId = null; haptic('warning'); commit(); } }),
+        h('button', { class: 'btn ghost', id: 'keep-' + s.id, text: T('keep'), onclick: function () { confirmId = null; render(); } })
+      ]));
+    } else {
+      li.appendChild(h('div', { class: 'acts' }, [
+        h('button', { class: 'icon', id: 'edit-' + s.id, 'aria-label': T('edit') + ' ' + s.name, text: T('edit'), onclick: function () { editingId = s.id; confirmId = null; render(); var f = document.getElementById('edit-name'); if (f) f.focus(); } }),
+        h('button', { class: 'icon del', id: 'del-' + s.id, 'aria-label': T('del') + ' ' + s.name, text: T('del'), onclick: function () { confirmId = s.id; editingId = null; render(); } })
+      ]));
+    }
+    return li;
+  }
+
+  function editRow(s) {
+    if (!editDraft || editDraft.id !== s.id) editDraft = { id: s.id, name: s.name, price: String(s.price), currency: s.currency, cycle: s.cycle, next: s.next, card: s.card || '' };
+    var err = editDraft.err ? h('p', { class: 'err', role: 'alert', style: 'margin:0', text: T(editDraft.err) }) : null;
+    return h('li', { class: 'row editing' }, [
+      h('form', { style: 'display:grid;gap:12px', onsubmit: function (e) {
+        e.preventDefault();
+        var v = validate(editDraft);
+        if (typeof v === 'string') { editDraft.err = v; render(); return; }
+        var target = state.subs.find(function (z) { return z.id === s.id; });
+        Object.assign(target, v);
+        editingId = null; editDraft = null;
+        commit();
+      } }, [
+        h('div', { class: 'edit-grid' }, fieldSet(editDraft, 'edit', false)),
+        err,
+        h('div', { class: 'edit-actions' }, [
+          h('button', { class: 'btn ghost', type: 'button', text: T('cancel'), onclick: function () { editingId = null; editDraft = null; render(); } }),
+          h('button', { class: 'btn', type: 'submit', disabled: saving, text: T('save') })
+        ])
+      ])
+    ]);
+  }
+
+  // ---------- persistence ----------
+  // Telegram CloudStorage keeps each user's data on Telegram's side, synced across their devices.
+  // Values are capped at 4096 chars, so the JSON is split into chunks d0..dN with a "meta" key holding the count.
+  var cs = tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9') ? tg.CloudStorage : null;
+  var CHUNK = 4000, saveTimer = null, savedChunks = 0;
+
+  function csGet(keys) { return new Promise(function (res, rej) { cs.getItems(keys, function (err, v) { err ? rej(err) : res(v || {}); }); }); }
+  function csSet(k, v) { return new Promise(function (res, rej) { cs.setItem(k, v, function (err) { err ? rej(err) : res(); }); }); }
+  function csDel(keys) { return new Promise(function (res) { if (!keys.length) return res(); cs.removeItems(keys, function () { res(); }); }); }
+
+  function saveLocal() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+  function loadLocal() { try { var v = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); if (v && Array.isArray(v.subs)) { state = v; normalize(); return true; } } catch (e) {} return false; }
+
+  function saveCloud() {
+    var json = JSON.stringify(state), parts = [];
+    for (var i = 0; i < json.length; i += CHUNK) parts.push(json.slice(i, i + CHUNK));
+    saving = true; render();
+    var chain = Promise.resolve();
+    parts.forEach(function (p, i) { chain = chain.then(function () { return csSet('d' + i, p); }); });
+    return chain.then(function () { return csSet('meta', JSON.stringify({ n: parts.length, v: 1 })); })
+      .then(function () {
+        var stale = []; for (var j = parts.length; j < savedChunks; j++) stale.push('d' + j);
+        savedChunks = parts.length; return csDel(stale);
+      })
+      .then(function () { saving = false; mode = 'shared'; render(); },
+            function () { saving = false; mode = 'local'; render(); });
+  }
+
+  function loadCloud() {
+    return csGet(['meta']).then(function (m) {
+      var meta = null; try { meta = JSON.parse(m.meta || 'null'); } catch (e) {}
+      if (!meta || !(meta.n > 0)) return false;
+      var keys = []; for (var i = 0; i < meta.n; i++) keys.push('d' + i);
+      return csGet(keys).then(function (v) {
+        var parsed = JSON.parse(keys.map(function (k) { return v[k] || ''; }).join(''));
+        if (!parsed || !Array.isArray(parsed.subs)) return false;
+        state = parsed; normalize(); savedChunks = meta.n; return true;
+      });
+    });
+  }
+
+  function commit() {
+    state.examples = false; // once edited, the examples note has done its job
+    saveLocal(); render();
+    if (cs) { clearTimeout(saveTimer); saveTimer = setTimeout(saveCloud, 400); }
+  }
+
+  render();
+  if (cs) {
+    loadCloud().then(function (found) {
+      if (!found) loadLocal(); // first launch on this account: examples, or this device's local copy
+      mode = 'shared'; render();
+    }, function () { loadLocal(); mode = 'local'; render(); });
+  } else {
+    loadLocal(); mode = 'local'; render();
+  }
+})();
+</script>
+</body>
+</html>
