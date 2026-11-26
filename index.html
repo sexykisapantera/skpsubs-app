@@ -161,6 +161,14 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
 .field > span { font-size: 13px; color: var(--muted); }
 .pair { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
 .err { margin: 0; color: var(--red); font-size: 13px; }
+.widget-card { margin-top: 10px; padding: 14px; display: grid; gap: 10px; }
+.widget-card .t { font-weight: 550; }
+.widget-card .d { font-size: 12px; color: var(--muted); margin: 0; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.linkish { background: none; border: 0; padding: 4px 0; color: var(--lime-text); font-weight: 600; text-align: left; cursor: pointer; }
+.linkish.muted { color: var(--muted); font-weight: 500; font-size: 13px; }
+.script-box { width: 100%; font: 12px/1.4 var(--mono); color: var(--ink); background: var(--card-2); border: 0; border-radius: 12px; padding: 10px; resize: vertical; }
+.primary:disabled { opacity: .55; }
 .primary { width: 100%; border: 0; border-radius: 999px; padding: 15px; background: var(--lime); color: var(--lime-ink); font-weight: 650; font-size: 16px; cursor: pointer; }
 .danger { width: 100%; border: 0; border-radius: 999px; padding: 13px; background: transparent; color: var(--red); font-weight: 600; cursor: pointer; }
 .danger.armed { background: var(--red); color: #fff; }
@@ -218,6 +226,12 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
       byCard: 'By card', noCard: 'No card', perMo: '/mo', subsCount: function (n) { return n + ' subscription' + (n === 1 ? '' : 's'); },
       settings: 'Settings', language: 'Language', rate: 'Dollar rate', rateSub: 'Used to convert ₴ and $',
       reminders: 'Reminders', remindersSub: 'Bot messages you at 10:00 (Kyiv) the day before',
+      widget: 'iPhone & Mac widget', widgetSub: 'Upcoming charges on your home screen, via the free Scriptable app',
+      copyScript: 'Copy widget script', copied: 'Script copied', copyAgain: 'Copy again', preparing: 'Preparing…',
+      widgetErr: 'Could not reach the server. Check your connection and try again.',
+      manualCopy: 'Copying was blocked here. Select all the text below and copy it.',
+      steps: ['Install Scriptable from the App Store.', 'Open Scriptable, tap +, paste the script and name it “Subscriptions”.', 'Long-press the home screen, add a Scriptable widget, tap it and choose “Subscriptions”.', 'On a Mac with macOS Sonoma or later, the same widget can be added to the desktop: right-click the desktop › Edit Widgets › iPhone widgets.'],
+      getApp: 'Open Scriptable in the App Store', newKey: 'Reset widget key', newKeyHint: 'Widgets set up with the old key stop updating until you paste the new script.', keyReset: 'New key made. Copy the script again.',
       newSub: 'New subscription', editSub: 'Edit subscription',
       name: 'Name', namePh: 'Netflix, Spotify, iCloud…', price: 'Price', billing: 'Billing', monthly: 'Monthly', yearly: 'Yearly',
       nextRenewal: 'Next renewal', pickDate: 'Pick a date', card: 'Card', cardPh: 'Mono •• 4821 (optional)',
@@ -242,6 +256,12 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
       byCard: 'За картками', noCard: 'Без картки', perMo: '/міс', subsCount: function (n) { return n + ' ' + ukPlural(n, 'підписка', 'підписки', 'підписок'); },
       settings: 'Налаштування', language: 'Мова', rate: 'Курс долара', rateSub: 'Для перерахунку ₴ і $',
       reminders: 'Нагадування', remindersSub: 'Бот напише о 10:00 (Київ) за день до списання',
+      widget: 'Віджет для iPhone і Mac', widgetSub: 'Найближчі списання на екрані «Додому» через безкоштовний Scriptable',
+      copyScript: 'Скопіювати скрипт віджета', copied: 'Скрипт скопійовано', copyAgain: 'Скопіювати ще раз', preparing: 'Готую…',
+      widgetErr: 'Не вдалося зв’язатися із сервером. Перевірте інтернет і спробуйте ще раз.',
+      manualCopy: 'Тут копіювання заблоковано. Виділіть увесь текст нижче й скопіюйте.',
+      steps: ['Встановіть Scriptable з App Store.', 'Відкрийте Scriptable, натисніть +, вставте скрипт і назвіть його «Підписки».', 'Затисніть екран «Додому», додайте віджет Scriptable, натисніть на нього й оберіть «Підписки».', 'На Mac із macOS Sonoma і новіше цей самий віджет можна додати на робочий стіл: правий клік › Редагувати віджети › віджети iPhone.'],
+      getApp: 'Відкрити Scriptable в App Store', newKey: 'Новий ключ віджета', newKeyHint: 'Віджети зі старим ключем перестануть оновлюватися, доки не вставите новий скрипт.', keyReset: 'Новий ключ готовий. Скопіюйте скрипт ще раз.',
       newSub: 'Нова підписка', editSub: 'Редагувати підписку',
       name: 'Назва', namePh: 'Netflix, Spotify, iCloud…', price: 'Ціна', billing: 'Оплата', monthly: 'Щомісяця', yearly: 'Щороку',
       nextRenewal: 'Наступне списання', pickDate: 'Оберіть дату', card: 'Картка', cardPh: 'Mono •• 4821 (необов’язково)',
@@ -444,8 +464,62 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
         h('div', { class: 'row' }, [h('span', { class: 't', text: T('language') }), seg([['en', 'EN'], ['uk', 'УКР']], lang, setLang, T('language'))]),
         h('div', { class: 'row' }, [h('div', null, [h('div', { class: 't', text: T('rate') }), h('div', { class: 'd', text: T('rateSub') })]), h('label', { class: 'rate' }, ['1 $ =', rateInput, '₴'])]),
         tg ? h('div', { class: 'row' }, [h('div', null, [h('div', { class: 't', text: T('reminders') }), h('div', { class: 'd', text: T('remindersSub') })]), h('span', { class: 'pill', text: '10:00' })]) : null
-      ])
+      ]),
+      tg ? widgetCard() : null
     ]);
+  }
+
+  // ---------- home-screen widget (Scriptable) ----------
+  // The script and the user's key are fetched ahead of time, so the Copy tap can write to the clipboard
+  // inside the tap itself (iOS refuses clipboard writes that happen after an await).
+  var widget = { script: null, status: 'idle', note: '' };
+  function prepareWidget(reset) {
+    if (!tg || !tg.initData) return Promise.resolve();
+    widget.status = 'busy'; render();
+    var keyReq = fetch(SYNC_URL + '/widget-key', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ initData: tg.initData, reset: !!reset }) }).then(function (r) { return r.json(); });
+    var scriptReq = fetch('widget.js', { cache: 'no-store' }).then(function (r) { return r.text(); });
+    return Promise.all([keyReq, scriptReq]).then(function (a) {
+      if (!a[0] || !a[0].ok) throw new Error('key');
+      widget.script = a[1].replace('__WIDGET_KEY__', a[0].key);
+      widget.status = reset ? 'reset' : (widget.status === 'busy' ? 'ready' : widget.status);
+      render();
+    }).catch(function () { widget.status = 'error'; render(); });
+  }
+  function copyText(txt) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { return navigator.clipboard.writeText(txt).then(function () { return true; }, function () { return legacyCopy(txt); }); } } catch (e) {}
+    return Promise.resolve(legacyCopy(txt));
+  }
+  function legacyCopy(txt) {
+    var ta = document.createElement('textarea'); ta.value = txt; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, txt.length);
+    var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove(); return ok;
+  }
+  function widgetCard() {
+    var busy = widget.status === 'busy';
+    var label = busy ? T('preparing') : (widget.status === 'copied' || widget.status === 'manual') ? T('copyAgain') : T('copyScript');
+    var kids = [
+      h('div', null, [h('div', { class: 't', text: T('widget') }), h('div', { class: 'd', text: T('widgetSub') })]),
+      h('button', { class: 'primary', type: 'button', disabled: busy || !widget.script, text: label, onclick: function () {
+        copyText(widget.script).then(function (ok) { widget.status = ok ? 'copied' : 'manual'; if (ok) haptic('success'); render(); });
+      } })
+    ];
+    if (widget.status === 'error') kids.push(h('p', { class: 'err', text: T('widgetErr') }));
+    if (widget.status === 'reset') kids.push(h('p', { class: 'd', text: T('keyReset') }));
+    if (widget.status === 'manual') {
+      kids.push(h('p', { class: 'd', text: T('manualCopy') }));
+      kids.push(h('textarea', { class: 'script-box', readonly: true, rows: '6', onfocus: function (e) { e.target.select(); } }, [widget.script]));
+    }
+    if (widget.status === 'copied' || widget.status === 'manual') {
+      kids.push(h('ol', { class: 'steps' }, T('steps').map(function (st) { return h('li', { text: st }); })));
+      kids.push(h('button', { class: 'linkish', type: 'button', text: T('getApp'), onclick: function () {
+        var u = 'https://apps.apple.com/app/scriptable/id1405459188';
+        if (tg && tg.openLink) tg.openLink(u); else window.open(u, '_blank');
+      } }));
+    }
+    kids.push(h('button', { class: 'linkish muted', type: 'button', disabled: busy, text: T('newKey'), title: T('newKeyHint'), onclick: function () { prepareWidget(true); } }));
+    return h('section', { class: 'card widget-card' }, kids);
   }
 
   // ---------- bottom sheet: add / edit ----------
@@ -602,6 +676,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
     render();
     if (JSON.stringify(state.subs) !== before) commit(); // old examples were removed: save the cleaned list
     else scheduleServerSync();
+    prepareWidget(false);
   }
   if (cs) {
     loadCloud().then(function (found) { if (!found) loadLocal(); mode = 'shared'; afterLoad(); },
