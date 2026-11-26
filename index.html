@@ -138,13 +138,19 @@ h1 { margin: 2px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em
 input { font: inherit; color: var(--ink); background: var(--card-2); border: 1px solid transparent; border-radius: 12px; padding: 11px 12px; min-width: 0; width: 100%; }
 input:focus { outline: none; border-color: var(--lime-line); background: var(--card); }
 input::placeholder { color: var(--faint); }
+input[type="date"] { -webkit-appearance: none; appearance: none; display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 46px; line-height: 1.3; text-align: left; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
+.date-wrap { position: relative; min-width: 0; }
+.date-wrap .ph { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
+.sheet .field, .sheet-in { min-width: 0; max-width: 100%; }
 
 /* FAB */
 .fab { position: fixed; right: max(18px, env(safe-area-inset-right, 0px)); bottom: calc(20px + var(--tg-safe-area-inset-bottom, 0px) + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--lime); color: var(--lime-ink); font-size: 30px; font-weight: 500; display: grid; place-items: center; cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,.18); z-index: 5; }
 
 /* sheet */
 .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.42); z-index: 20; animation: fade .18s ease; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--card); border-radius: 24px 24px 0 0; max-height: 92vh; overflow-y: auto; animation: up .22s cubic-bezier(.2,.8,.2,1);
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--card); border-radius: 24px 24px 0 0; max-height: 92vh; overflow-y: auto; overflow-x: hidden; animation: up .22s cubic-bezier(.2,.8,.2,1);
   padding: 8px max(18px, env(safe-area-inset-left, 0px)) calc(18px + var(--tg-safe-area-inset-bottom, 0px) + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-right, 0px)); }
 .sheet-in { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
 .grab { width: 36px; height: 4px; border-radius: 4px; background: var(--line); margin: 2px auto 4px; }
@@ -214,7 +220,7 @@ input::placeholder { color: var(--faint); }
       reminders: 'Reminders', remindersSub: 'Bot messages you at 10:00 (Kyiv) the day before',
       newSub: 'New subscription', editSub: 'Edit subscription',
       name: 'Name', namePh: 'Netflix, Spotify, iCloud…', price: 'Price', billing: 'Billing', monthly: 'Monthly', yearly: 'Yearly',
-      nextRenewal: 'Next renewal', card: 'Card', cardPh: 'Mono •• 4821 (optional)',
+      nextRenewal: 'Next renewal', pickDate: 'Pick a date', card: 'Card', cardPh: 'Mono •• 4821 (optional)',
       add: 'Add subscription', save: 'Save changes', del: 'Delete subscription', delConfirm: 'Tap again to delete', close: 'Close',
       errName: 'Give the subscription a name.', errPrice: 'Enter the price as a number, like 199 or 9.99.', errDate: 'Pick the next renewal date.',
       errCard: 'Enter only the bank and the last 4 digits, never the full card number.',
@@ -238,7 +244,7 @@ input::placeholder { color: var(--faint); }
       reminders: 'Нагадування', remindersSub: 'Бот напише о 10:00 (Київ) за день до списання',
       newSub: 'Нова підписка', editSub: 'Редагувати підписку',
       name: 'Назва', namePh: 'Netflix, Spotify, iCloud…', price: 'Ціна', billing: 'Оплата', monthly: 'Щомісяця', yearly: 'Щороку',
-      nextRenewal: 'Наступне списання', card: 'Картка', cardPh: 'Mono •• 4821 (необов’язково)',
+      nextRenewal: 'Наступне списання', pickDate: 'Оберіть дату', card: 'Картка', cardPh: 'Mono •• 4821 (необов’язково)',
       add: 'Додати підписку', save: 'Зберегти', del: 'Видалити підписку', delConfirm: 'Натисніть ще раз, щоб видалити', close: 'Закрити',
       errName: 'Вкажіть назву підписки.', errPrice: 'Вкажіть ціну числом, наприклад 199 або 9.99.', errDate: 'Оберіть дату наступного списання.',
       errCard: 'Вкажіть лише банк і останні 4 цифри, не повний номер картки.',
@@ -474,6 +480,14 @@ input::placeholder { color: var(--faint); }
       for (var k in attrs) a[k] = attrs[k];
       return h('input', a);
     }
+    // Safari shows an empty date input as a blank box, so draw our own placeholder until a date is picked.
+    function dateField() {
+      var ph = h('span', { class: 'ph', text: T('pickDate'), hidden: !!d.next });
+      var inp = input('f-next', 'next', { type: 'date', lang: lang });
+      inp.addEventListener('input', function () { ph.hidden = !!inp.value; });
+      inp.addEventListener('change', function () { d.next = inp.value; ph.hidden = !!inp.value; });
+      return h('div', { class: 'date-wrap' }, [inp, ph]);
+    }
     var form = h('form', { class: 'sheet-in', onsubmit: function (e) { e.preventDefault(); submitSheet(); } }, [
       h('div', { class: 'grab', 'aria-hidden': 'true' }),
       h('div', { class: 'sheet-head' }, [
@@ -487,7 +501,7 @@ input::placeholder { color: var(--faint); }
       ])]),
       h('div', { class: 'field' }, [h('span', { text: T('billing') }),
         h('div', null, [seg([['monthly', T('monthly')], ['yearly', T('yearly')]], d.cycle, function (v) { d.cycle = v; tap(); renderSheet(); }, T('billing'))])]),
-      h('label', { class: 'field' }, [h('span', { text: T('nextRenewal') }), input('f-next', 'next', { type: 'date', lang: lang })]),
+      h('label', { class: 'field' }, [h('span', { text: T('nextRenewal') }), dateField()]),
       h('label', { class: 'field' }, [h('span', { text: T('card') }), input('f-card', 'card', { placeholder: T('cardPh'), list: 'card-options', maxlength: '40' })]),
       h('datalist', { id: 'card-options' }, cards.map(function (c) { return h('option', { value: c }); })),
       sheet.err ? h('p', { class: 'err', role: 'alert', text: T(sheet.err) }) : null,
